@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Inno Stock Online</title>
+<title>Inno Stok Online</title>
 <link rel="icon" href="icon-192.png">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
@@ -83,13 +83,15 @@ th{background:#f8fafc}
   <div class="layout">
     <div class="sidebar">
       <img src="logo.png" alt="Logo">
-      <h2>Inno Stock</h2>
+      <h2>Inno Stok</h2>
       <div class="sub">Versão online compartilhada</div>
       <div id="userChip" class="user-chip">Usuário</div>
       <button onclick="showSection('account')">Minha conta</button>
       <button onclick="showSection('users')">Usuários</button>
       <button onclick="showSection('produto')">Novo produto</button>
       <button onclick="showSection('manual')">Baixa manual</button>
+      <button onclick="showSection('estoqueView')">Ver estoque</button>
+      <button onclick="exportarPlanilha()">Exportar planilha</button>
       <button onclick="showSection('etiquetas')">Etiquetas de estoque</button>
       <button onclick="showSection('scannerMobile')">Scanner no celular</button>
       <button class="logout" onclick="logout()">Sair</button>
@@ -172,6 +174,16 @@ th{background:#f8fafc}
         <button class="secondary-action" style="margin-top:12px" onclick="registrarManual()">Registrar</button>
       </div>
 
+      <div id="estoqueView" class="card hidden">
+        <h3>Estoque</h3>
+        <div class="wrap">
+          <table>
+            <thead><tr><th>Nome</th><th>Código de barras</th><th>Categoria</th><th>Quantidade</th><th>Preço</th><th>Código interno</th></tr></thead>
+            <tbody id="listaEstoqueCompleto"></tbody>
+          </table>
+        </div>
+      </div>
+
       <div id="etiquetas" class="card hidden">
         <h3>Etiquetas de estoque</h3>
         <div class="form-row" style="margin-bottom:12px">
@@ -239,7 +251,7 @@ function barcodeUrl(text) { return "https://bwipjs-api.metafloor.com/?bcid=code1
 function qrUrl(text) { return "https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=" + encodeURIComponent(text); }
 
 function hideAllSections() {
-  ["account","users","produto","manual","etiquetas","scannerMobile"].forEach(id => {
+  ["account","users","produto","manual","estoqueView","etiquetas","scannerMobile"].forEach(id => {
     const el = byId(id);
     if (el) el.classList.add("hidden");
   });
@@ -572,7 +584,93 @@ function render() {
   preencherSelectProduto();
   renderUsuarios();
   renderEtiquetas();
+  renderEstoqueCompleto();
 }
+
+function exportarPlanilha() {
+  if (!db.products || !db.products.length) {
+    alert("Não há produtos para exportar.");
+    return;
+  }
+
+  const produtosOrdenados = [...db.products].sort((a, b) => {
+    const catA = String(a.category || "").toLowerCase();
+    const catB = String(b.category || "").toLowerCase();
+    if (catA !== catB) return catA.localeCompare(catB, 'pt-BR');
+    return String(a.name || "").localeCompare(String(b.name || ""), 'pt-BR');
+  });
+
+  const headers = [
+    "Produto",
+    "Categoria",
+    "Quantidade em estoque",
+    "Preço unitário",
+    "Valor total em estoque",
+    "Código de barras",
+    "Código interno",
+    "Etiqueta"
+  ];
+
+  const rows = produtosOrdenados.map(p => {
+    const qtd = Number(p.stock || 0);
+    const preco = Number(p.price || 0);
+    const total = qtd * preco;
+    return [
+      p.name || "",
+      p.category || "",
+      qtd,
+      preco.toFixed(2),
+      total.toFixed(2),
+      p.barcode || "",
+      p.internal_code || "",
+      p.stock_label || ""
+    ];
+  });
+
+  const totalProdutos = produtosOrdenados.length;
+  const totalUnidades = produtosOrdenados.reduce((s, p) => s + Number(p.stock || 0), 0);
+  const valorTotal = produtosOrdenados.reduce((s, p) => s + (Number(p.stock || 0) * Number(p.price || 0)), 0);
+
+  const tabela = [
+    ["Resumo do estoque"],
+    [""],
+    ["Total de produtos", totalProdutos],
+    ["Total de unidades", totalUnidades],
+    ["Valor total estimado", valorTotal.toFixed(2)],
+    [""],
+    headers,
+    ...rows
+  ];
+
+  const csv = tabela
+    .map(row => row.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(";"))
+    .join("\n");
+
+  const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8;" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "estoque_inno_stock_organizado.csv";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
+}
+
+function renderEstoqueCompleto() {
+  const tbody = byId("listaEstoqueCompleto");
+  if (!tbody) return;
+  tbody.innerHTML = db.products.map(p => `
+    <tr>
+      <td>${p.name || ""}</td>
+      <td>${p.barcode || ""}</td>
+      <td>${p.category || ""}</td>
+      <td>${p.stock ?? ""}</td>
+      <td>${Number(p.price || 0).toFixed(2)}</td>
+      <td>${p.internal_code || ""}</td>
+    </tr>
+  `).join("");
+}
+
 bootstrap();
 </script>
 </body>
